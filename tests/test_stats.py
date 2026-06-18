@@ -43,7 +43,7 @@ def test_robust_deviation_and_z() -> None:
 
 def test_conformal_pvalue_bounds_and_monotonicity() -> None:
     baseline = [0.1, 0.2, 0.3, 0.4, 0.5]
-    # A huge deviation is maximally surprising -> smallest p = 1/(n+1)
+    # A huge deviation is maximally surprising -> smallest p = 1/(n+1) (floored).
     assert conformal_pvalue(100.0, baseline) == 1 / 6
     # A tiny deviation is unsurprising -> p close to 1
     assert conformal_pvalue(0.0, baseline) == 1.0

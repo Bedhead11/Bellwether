@@ -4,7 +4,7 @@ import pytest
 
 from bellwether.baseline import BaselineManager
 from bellwether.detect import DriftScorer, ScoringConfig
-from bellwether.detect.engine import calibrate_threshold
+from bellwether.detect.engine import _sustained_scan, calibrate_threshold
 from bellwether.detect.report import ObservationScore, SubScore
 from bellwether.features import FeatureFamily
 from bellwether.fixtures import FaultSpec, FixtureAgent, faulted_run
@@ -28,24 +28,25 @@ def _obs(kind: str, idx, score: float, warmup: bool = False) -> ObservationScore
 # --- L0: k-of-w sustained rule + level logic --------------------------------------------
 
 
+def _seq(scores):  # type: ignore[no-untyped-def]
+    return DriftScorer()._generic_step_seq(scores)
+
+
 def test_single_spike_does_not_alert() -> None:
-    scorer = DriftScorer(ScoringConfig(window_w=3, min_hits_k=2))
     scores = [_obs("step", 0, 0.95), _obs("step", 1, 0.1), _obs("step", 2, 0.1)]
-    assert scorer._step_sustained(scores, 0.9) == (False, None)
+    assert _sustained_scan(_seq(scores), 0.9, w=3, k=2) == (False, None)
 
 
 def test_alternating_hits_alert_when_rule_satisfied() -> None:
-    scorer = DriftScorer(ScoringConfig(window_w=3, min_hits_k=2))
     # hits at steps 0 and 2 (a tool/cost fault pattern) within a window of 3; the rule is
     # satisfied at step 2 (the second hit), which is the honest, operational alert time.
     scores = [_obs("step", 0, 0.95), _obs("step", 1, 0.1), _obs("step", 2, 0.96)]
-    assert scorer._step_sustained(scores, 0.9) == (True, 2)
+    assert _sustained_scan(_seq(scores), 0.9, w=3, k=2) == (True, 2)
 
 
 def test_warmup_steps_are_not_hits() -> None:
-    scorer = DriftScorer(ScoringConfig(window_w=3, min_hits_k=2))
     scores = [_obs("step", 0, 0.95), _obs("step", 1, 0.0, warmup=True), _obs("step", 2, 0.0)]
-    assert scorer._step_sustained(scores, 0.9) == (False, None)
+    assert _sustained_scan(_seq(scores), 0.9, w=3, k=2) == (False, None)
 
 
 def test_step_alert_level_is_kth_largest_in_window() -> None:

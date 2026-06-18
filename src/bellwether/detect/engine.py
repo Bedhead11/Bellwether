@@ -1,20 +1,21 @@
 """The drift scoring engine: baseline + detectors + aggregator + sustained-alert + calibration.
 
 ``DriftScorer`` scores a run's observation sequence against its baseline and produces a
-:class:`DriftReport`. Two detection tracks run in parallel and a run alerts if *either* fires:
+:class:`DriftReport`. A run alerts if *any* detection track fires:
 
-- **step track** — a *k-of-w* sustained rule over per-step observations: at least ``k`` of the
-  last ``w`` steps exceed the step threshold. k-of-w (rather than k-*consecutive*) is essential
-  because several faults only perturb alternating steps (e.g. a cost blowup hits LLM steps but
-  not the tool steps between them); it still suppresses single-point noise. This track yields
-  ``t_alert`` and therefore **lead-time**.
-- **run-summary track** — the single run-summary observation vs the run threshold; catches
-  purely aggregate drifts (total cost, depth) that no single step reveals.
+- **critical** — a single step whose generic drift score alone clears the critical threshold
+  (fast path for overwhelming drift). Yields ``t_alert``.
+- **step (k-of-w)** — at least ``k`` of the last ``w`` steps exceed the step threshold. k-of-w
+  (not k-*consecutive*) catches faults that perturb only alternating steps while still
+  suppressing single-point noise. Yields ``t_alert`` and therefore **lead-time**.
+- **run-summary** — the run-summary observation vs the run threshold; catches purely aggregate
+  drift no single step reveals.
+- **signature tracks** (skill tier, optional) — one focused, direction-filtered track per drift
+  signature; a single step matching the signature's sharp focused score fires it.
 
-Each track is **calibrated independently** on a benign hold-out to its own share of the
-false-positive budget, because the two tracks have different score distributions (the run
-summary aggregates ~20 features, so its multiplicity penalty differs from a step's). A single
-global threshold would let one track's noise suppress the other's signal.
+Every track is **calibrated independently** on a benign hold-out to its own share of the
+false-positive budget, because the tracks have different score distributions. The total budget
+is fixed and split across tracks, so adding signatures cannot blow it — the anti-collapse guard.
 """
 
 from __future__ import annotations
@@ -27,10 +28,14 @@ from bellwether.detect.aggregator import aggregate, family_contributions
 from bellwether.detect.detectors import score_categorical, score_numeric
 from bellwether.detect.report import Alert, DriftReport, ObservationScore, Thresholds
 from bellwether.features import FeatureObservation, extract_observations
+from bellwether.improve.skills import SkillLibrary
 from bellwether.schema import AgentRun
 
 # Sentinel "never a hit / never alerts at any threshold" (real drift scores live in [0, 1]).
 _NEVER = -1.0
+
+# One step's contribution to a track: (step_index, score, warmup).
+_StepPoint = tuple[int, float, bool]
 
 
 @dataclass(frozen=True)
@@ -41,19 +46,64 @@ class ScoringConfig:
     laplace_alpha: float = 1.0  # categorical smoothing
     window_w: int = 3  # sliding window size for the k-of-w sustained rule
     min_hits_k: int = 2  # required hits within the window
-    # Shares of the FP budget across the three tracks (critical / sustained-step / run); summed
-    # and normalized, so they need not add to exactly 1.
+    # Shares of the FP budget across the generic tracks (critical / sustained-step / run);
+    # summed and normalized so they need not add to exactly 1.
     crit_budget_frac: float = 0.34
     step_budget_frac: float = 0.33
     run_budget_frac: float = 0.33
+    # Share of the *total* budget reserved for the signature tracks collectively (split equally).
+    signature_budget_frac: float = 0.4
     default_threshold: float = 0.999
+
+
+# --- track primitives (operate on a per-step score sequence) -----------------------------
+
+
+def _critical_scan(seq: Sequence[_StepPoint], threshold: float) -> tuple[bool, int | None]:
+    for idx, score, warm in seq:
+        if not warm and score >= threshold:
+            return (True, idx)
+    return (False, None)
+
+
+def _critical_level(seq: Sequence[_StepPoint]) -> float:
+    return max((s for _, s, w in seq if not w), default=_NEVER)
+
+
+def _sustained_scan(
+    seq: Sequence[_StepPoint], threshold: float, w: int, k: int
+) -> tuple[bool, int | None]:
+    """Fire at the step where k-of-w becomes satisfied (the honest, operational alert time)."""
+    window: list[bool] = []
+    for idx, score, warm in seq:
+        window.append((not warm) and score >= threshold)
+        if len(window) > w:
+            window.pop(0)
+        if sum(window) >= k:
+            return (True, idx)
+    return (False, None)
+
+
+def _sustained_level(seq: Sequence[_StepPoint], w: int, k: int) -> float:
+    level = _NEVER
+    window: list[float] = []
+    for _, score, warm in seq:
+        window.append(_NEVER if warm else score)
+        if len(window) > w:
+            window.pop(0)
+        if len(window) >= k:
+            level = max(level, sorted(window, reverse=True)[k - 1])
+    return level
 
 
 class DriftScorer:
     """Scores runs against baselines and raises calibrated drift alerts."""
 
-    def __init__(self, config: ScoringConfig | None = None) -> None:
+    def __init__(
+        self, config: ScoringConfig | None = None, library: SkillLibrary | None = None
+    ) -> None:
         self.config = config or ScoringConfig()
+        self.library = library
 
     # --- observation-level scoring -------------------------------------------------------
 
@@ -72,93 +122,67 @@ class DriftScorer:
             )
             if s is not None:
                 subs.append(s)
-        return aggregate(obs.kind, obs.step_index, subs)
+        base = aggregate(obs.kind, obs.step_index, subs)
+        if self.library is not None and not base.warmup:
+            sig_scores = self.library.signature_scores(base.sub_scores)
+            return ObservationScore(
+                base.kind,
+                base.step_index,
+                base.drift_score,
+                base.sub_scores,
+                base.warmup,
+                signature_scores=sig_scores,
+            )
+        return base
 
     def score_run(self, run: AgentRun, baseline: Baseline) -> list[ObservationScore]:
         """Score every observation of a run (per-step + run-summary) against the baseline."""
         return [self._score_observation(o, baseline) for o in extract_observations(run)]
 
-    # --- critical track: single overwhelming step ---------------------------------------
+    # --- sequence builders --------------------------------------------------------------
 
     @staticmethod
-    def _critical_alert(
-        scores: Sequence[ObservationScore], threshold: float
-    ) -> tuple[bool, int | None]:
-        """Fire at the first step whose drift score alone clears the critical threshold."""
-        for obs in scores:
-            if obs.kind != "step" or obs.warmup:
-                continue
-            if obs.drift_score >= threshold:
-                return (True, obs.step_index)
-        return (False, None)
+    def _generic_step_seq(scores: Sequence[ObservationScore]) -> list[_StepPoint]:
+        return [
+            (o.step_index if o.step_index is not None else -1, o.drift_score, o.warmup)
+            for o in scores
+            if o.kind == "step"
+        ]
 
     @staticmethod
-    def critical_level(scores: Sequence[ObservationScore]) -> float:
-        """Largest critical threshold at which a single step still alerts (max step score)."""
-        level = _NEVER
-        for obs in scores:
-            if obs.kind == "step" and not obs.warmup:
-                level = max(level, obs.drift_score)
-        return level
-
-    # --- step track: k-of-w sustained rule ----------------------------------------------
-
-    def _step_sustained(
-        self, scores: Sequence[ObservationScore], threshold: float
-    ) -> tuple[bool, int | None]:
-        """Return (triggered, t_alert).
-
-        ``t_alert`` is the step at which the k-of-w rule becomes satisfied — i.e. when the alert
-        would actually fire and an operator would be notified. We deliberately do *not* back-date
-        it to the earliest hit in the window: that would overstate lead-time. This is the honest,
-        operationally meaningful detection time.
-        """
-        w = self.config.window_w
-        k = self.config.min_hits_k
-        window: list[bool] = []  # is_hit for the last w steps
-        for obs in scores:
-            if obs.kind != "step":
-                continue
-            is_hit = (not obs.warmup) and obs.drift_score >= threshold
-            window.append(is_hit)
-            if len(window) > w:
-                window.pop(0)
-            if sum(window) >= k:
-                return (True, obs.step_index)
-        return (False, None)
-
-    def step_alert_level(self, scores: Sequence[ObservationScore]) -> float:
-        """Largest step threshold at which the step track still alerts (for calibration).
-
-        Within any window of ``w`` steps, the highest threshold that still yields ``k`` hits is
-        the ``k``-th largest drift score in the window; the run's level is the max over windows.
-        """
-        w = self.config.window_w
-        k = self.config.min_hits_k
-        level = _NEVER
-        window: list[float] = []
-        for obs in scores:
-            if obs.kind != "step":
-                continue
-            window.append(_NEVER if obs.warmup else obs.drift_score)
-            if len(window) > w:
-                window.pop(0)
-            if len(window) >= k:
-                kth_largest = sorted(window, reverse=True)[k - 1]
-                level = max(level, kth_largest)
-        return level
-
-    # --- run-summary track ---------------------------------------------------------------
+    def _signature_step_seq(scores: Sequence[ObservationScore], name: str) -> list[_StepPoint]:
+        return [
+            (
+                o.step_index if o.step_index is not None else -1,
+                o.signature_scores.get(name, 0.0),
+                o.warmup,
+            )
+            for o in scores
+            if o.kind == "step"
+        ]
 
     @staticmethod
     def _run_summary_score(scores: Sequence[ObservationScore]) -> ObservationScore | None:
         return next((o for o in scores if o.kind == "run_summary"), None)
+
+    # --- calibration levels --------------------------------------------------------------
+
+    def critical_level(self, scores: Sequence[ObservationScore]) -> float:
+        return _critical_level(self._generic_step_seq(scores))
+
+    def step_alert_level(self, scores: Sequence[ObservationScore]) -> float:
+        return _sustained_level(
+            self._generic_step_seq(scores), self.config.window_w, self.config.min_hits_k
+        )
 
     def run_summary_level(self, scores: Sequence[ObservationScore]) -> float:
         rs = self._run_summary_score(scores)
         if rs is None or rs.warmup:
             return _NEVER
         return rs.drift_score
+
+    def signature_level(self, scores: Sequence[ObservationScore], name: str) -> float:
+        return _critical_level(self._signature_step_seq(scores, name))
 
     # --- run-level verdict ---------------------------------------------------------------
 
@@ -168,13 +192,29 @@ class DriftScorer:
         d = self.config.default_threshold
         thr = thresholds or Thresholds(critical=d, step=d, run=d)
         scores = self.score_run(run, baseline)
+        gen_seq = self._generic_step_seq(scores)
 
-        # Step-level detection: a single critical step OR a sustained k-of-w streak. The run's
-        # step alert time is the earlier of the two.
-        crit_trig, t_crit = self._critical_alert(scores, thr.critical)
-        sust_trig, t_sust = self._step_sustained(scores, thr.step)
+        # Generic step-level tracks.
+        crit_trig, t_crit = _critical_scan(gen_seq, thr.critical)
+        sust_trig, t_sust = _sustained_scan(
+            gen_seq, thr.step, self.config.window_w, self.config.min_hits_k
+        )
         step_times = [t for t in (t_crit, t_sust) if t is not None]
         triggered = crit_trig or sust_trig
+
+        # Signature tracks (skill tier).
+        fired_signature: str | None = None
+        if self.library is not None:
+            for name in self.library.names:
+                sig_thr = thr.signatures.get(name, d)
+                sig_trig, t_sig = _critical_scan(self._signature_step_seq(scores, name), sig_thr)
+                if sig_trig:
+                    triggered = True
+                    if t_sig is not None:
+                        step_times.append(t_sig)
+                    if fired_signature is None:
+                        fired_signature = name
+
         t_alert = min(step_times) if step_times else None
 
         rs = self._run_summary_score(scores)
@@ -194,6 +234,7 @@ class DriftScorer:
             primary_family=primary.family if (triggered and primary) else None,
             primary_feature=primary.feature if (triggered and primary) else None,
             detail=primary.detail if (triggered and primary) else "",
+            signature=fired_signature if triggered else None,
         )
         return DriftReport(
             run_id=run.run_id,
@@ -239,25 +280,41 @@ def calibrate_threshold(
     *,
     target_fp_rate: float,
 ) -> Thresholds:
-    """Calibrate per-track thresholds so the combined benign FP-rate stays within budget.
+    """Calibrate every track's threshold so the combined benign FP-rate stays within budget.
 
-    The budget is split between the two tracks (union bound) per
-    ``ScoringConfig.step_budget_frac``; each track's threshold is the most sensitive value
-    respecting its share.
+    The budget is split (union bound): a configurable share to the signature tracks collectively
+    (split equally), the remainder to the generic tracks by their configured fractions. Each
+    track's threshold is the most sensitive value respecting its share.
     """
     runs = list(benign_runs)
     scored = [scorer.score_run(r, baseline) for r in runs]
+    cfg = scorer.config
+
+    names = scorer.library.names if scorer.library is not None else []
+    sig_frac = cfg.signature_budget_frac if names else 0.0
+    generic_total = target_fp_rate * (1.0 - sig_frac)
+    gen_norm = cfg.crit_budget_frac + cfg.step_budget_frac + cfg.run_budget_frac
+
     crit_levels = [scorer.critical_level(s) for s in scored]
     step_levels = [scorer.step_alert_level(s) for s in scored]
     run_levels = [scorer.run_summary_level(s) for s in scored]
 
-    cfg = scorer.config
-    total = cfg.crit_budget_frac + cfg.step_budget_frac + cfg.run_budget_frac
-    crit_target = target_fp_rate * cfg.crit_budget_frac / total
-    step_target = target_fp_rate * cfg.step_budget_frac / total
-    run_target = target_fp_rate * cfg.run_budget_frac / total
+    signatures: dict[str, float] = {}
+    if names:
+        per_sig_target = target_fp_rate * sig_frac / len(names)
+        for name in names:
+            sig_levels = [scorer.signature_level(s, name) for s in scored]
+            signatures[name] = _smallest_threshold_within_budget(sig_levels, per_sig_target)
+
     return Thresholds(
-        critical=_smallest_threshold_within_budget(crit_levels, crit_target),
-        step=_smallest_threshold_within_budget(step_levels, step_target),
-        run=_smallest_threshold_within_budget(run_levels, run_target),
+        critical=_smallest_threshold_within_budget(
+            crit_levels, generic_total * cfg.crit_budget_frac / gen_norm
+        ),
+        step=_smallest_threshold_within_budget(
+            step_levels, generic_total * cfg.step_budget_frac / gen_norm
+        ),
+        run=_smallest_threshold_within_budget(
+            run_levels, generic_total * cfg.run_budget_frac / gen_norm
+        ),
+        signatures=signatures,
     )

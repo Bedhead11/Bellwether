@@ -77,7 +77,9 @@ def conformal_pvalue(new_deviation: float, baseline_deviations: Sequence[float])
 
     p = (1 + #{baseline_dev >= new_dev}) / (n + 1). Small p == surprising. Under exchangeable
     benign data this p is (super-)uniform, which is what lets the aggregator's calibrated
-    threshold map to a target false-positive rate.
+    threshold map to a target false-positive rate. The p floors at 1/(n+1); detectors that need
+    to separate values *beyond* the baseline maximum carry a continuous deviation ``magnitude``
+    on the sub-score for that purpose (see ``SubScore.magnitude``).
     """
     n = len(baseline_deviations)
     if n == 0:

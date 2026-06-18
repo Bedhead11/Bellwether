@@ -22,6 +22,10 @@ class SubScore:
     score: float  # in [0, 1]; higher == more anomalous (== 1 - p_value)
     p_value: float
     direction: float  # signed robust z for numeric features; 0 for categorical
+    # Unbounded anomaly magnitude that does not saturate the conformal floor: |robust z| for
+    # numeric features, surprise (-log10 p) for categorical. Lets signatures separate values
+    # beyond the baseline maximum, where the conformal p-value floors and collides.
+    magnitude: float = 0.0
     detail: str = ""
 
 
@@ -34,6 +38,8 @@ class ObservationScore:
     drift_score: float  # in [0, 1]
     sub_scores: tuple[SubScore, ...]  # sorted descending by score
     warmup: bool  # True when no feature had enough baseline data to score
+    # Focused scores per drift signature (skill tier); empty when no library is configured.
+    signature_scores: dict[str, float] = field(default_factory=dict)
 
     @property
     def primary(self) -> SubScore | None:
@@ -59,6 +65,8 @@ class Thresholds:
     critical: float
     step: float
     run: float
+    # Per-signature critical thresholds (skill tier). Empty when no library is configured.
+    signatures: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +79,7 @@ class Alert:
     primary_family: FeatureFamily | None
     primary_feature: str | None
     detail: str = ""
+    signature: str | None = None  # the drift signature that fired, if any (skill tier)
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,7 +107,7 @@ class DriftReport:
         if not a.triggered:
             return f"[ok] {self.run_id}: no drift (max={self.max_drift:.3f})"
         where = f"step {a.step_index}" if a.step_index is not None else "run-end"
-        return (
-            f"[DRIFT] {self.run_id}: {a.primary_family}/{a.primary_feature} at {where} "
-            f"(score={a.drift_score:.3f})"
+        what = (
+            f"signature:{a.signature}" if a.signature else f"{a.primary_family}/{a.primary_feature}"
         )
+        return f"[DRIFT] {self.run_id}: {what} at {where} (score={a.drift_score:.3f})"

@@ -12,6 +12,8 @@ cold-start avoids crying wolf (design doc 04).
 
 from __future__ import annotations
 
+import math
+
 from bellwether.baseline import Baseline
 from bellwether.detect.report import SubScore
 from bellwether.features import CategoricalObs, NumericObs
@@ -47,6 +49,7 @@ def score_numeric(obs: NumericObs, baseline: Baseline, *, min_samples: int) -> S
         score=1.0 - p,
         p_value=p,
         direction=z,
+        magnitude=abs(z),
         detail=f"z={z:+.2f}",
     )
 
@@ -76,5 +79,6 @@ def score_categorical(
         score=1.0 - p,
         p_value=p,
         direction=0.0,
+        magnitude=-math.log10(max(p, 1e-12)),  # surprise; rare/novel categories score high
         detail="novel-category" if novel else f"freq={c}/{total}",
     )
