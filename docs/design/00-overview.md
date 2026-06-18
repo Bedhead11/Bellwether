@@ -15,6 +15,7 @@ recommends one, justifies it, and names the riskiest unknown.
 | 2 | Testing & evaluation harness (highest stakes) | [`02-eval-harness.md`](02-eval-harness.md) | Phase 0–2 |
 | 3 | Drift vs. intended-change disambiguation | [`03-drift-vs-intended-change.md`](03-drift-vs-intended-change.md) | Phase 0–1 |
 | 4 | Baseline representation | [`04-baseline-representation.md`](04-baseline-representation.md) | Phase 1 |
+| — | Stack choices & deliberate deviations | [`05-stack-choices.md`](05-stack-choices.md) | cross-cutting |
 
 ## How the decisions interlock
 
