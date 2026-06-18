@@ -132,7 +132,8 @@ Per-fault *timely* recall: `latency_injection` 0.99, `induced_loop` 1.00, `retry
 `tool_misselection` 0.91, `cost_blowup` 0.41, `output_degradation` 0.07. The last two — subtle,
 single-direction drifts on alternating steps against a tight visible-failure line — are honestly
 hard for the static detector and are exactly where the self-improvement engine has room to show
-compounding gains. Reproduce with `uv run python examples/benchmark.py`.
+compounding gains. Reproduce with `uv run python examples/benchmark.py`. Full methodology, all
+results with CIs, and honest limitations: [`docs/BENCHMARK.md`](docs/BENCHMARK.md).
 
 ## Self-improvement & governance
 
