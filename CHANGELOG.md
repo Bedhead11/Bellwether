@@ -5,6 +5,21 @@ All notable changes to BELLWETHER are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+### Drift vs. intended-change runtime (design decision #3)
+
+- `change/page_hinkley.py`: an online Page-Hinkley change-point detector to separate a persistent
+  regime shift from a transient spike.
+- `change/aware.py`: `ChangeAwareMonitor` implementing the doc-03 decision table — a new
+  fingerprint or deploy marker opens a quarantined lineage (learned, not alerted); within a stable
+  fingerprint, an unexplained *persistent* shift (Page-Hinkley over the drift stream) fires as
+  drift; `accept_new_normal` promotes a quarantined lineage, audited. The change-point detector is
+  gated to start only once a baseline is warm (and reset at that transition) so the warmup ramp
+  isn't mistaken for a regime change; benign runs fold into the baseline only below a learn-ceiling
+  so it never silently absorbs developing drift.
+- Tests cover the metamorphic invariants: intended change is quarantined (not drift),
+  accept-new-normal clears the alert, a persistent unexplained shift is detected, and benign
+  traffic stays quiet.
+
 ### Phase 3 — Topology self-improvement + dashboard + queryable monitor
 
 - `improve/topology.py`: MAP-Elites quality-diversity search over the detector-ensemble

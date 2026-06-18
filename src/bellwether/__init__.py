@@ -5,6 +5,7 @@ The canonical ``AgentRun`` schema is the contract every subsystem is built again
 """
 
 from bellwether.baseline import BaselineManager
+from bellwether.change import ChangeAwareMonitor
 from bellwether.detect import DriftReport, DriftScorer, ScoringConfig, Thresholds
 from bellwether.monitor import DriftMonitor
 from bellwether.schema import (
@@ -39,6 +40,7 @@ __all__ = [
     "DriftReport",
     "TriageExplainer",
     "DriftMonitor",
+    "ChangeAwareMonitor",
 ]
 
 __version__ = "0.0.1"

@@ -1,7 +1,10 @@
 # Design Decision #3 — Drift vs. Intended-Change Disambiguation
 
-> Status: **Decided** (design). The fingerprint field lands in the `AgentRun` schema in
-> Phase 0; the quarantine/accept-new-normal flow lands with the Baseline Manager (Phase 1).
+> Status: **Implemented.** The config fingerprint is on the `AgentRun` schema (Phase 0) and keys
+> baselines (Phase 1). The runtime — quarantine on a declared change, Page-Hinkley change-point
+> correlation within a fingerprint, deploy-marker learning windows, and an audited
+> accept-new-normal — ships in `bellwether.change` (`ChangeAwareMonitor`, `PageHinkley`) with the
+> metamorphic invariants from doc 02 covered by tests.
 
 ## Problem
 
