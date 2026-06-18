@@ -21,12 +21,11 @@ the intelligence layer on top of tracing: it *consumes* OpenTelemetry traces and
   drift signatures, and evolves its detector ensemble — every change logged with rationale and
   before/after metrics.
 
-> **Status: Phase 2 (governance + self-improvement).** On top of the Phase 1 detector:
-> a tamper-evident audit layer, a skill-tier self-improvement loop (generator → eval-gated
-> governance gate → archive) that learns drift signatures and *demonstrably* lifts held-out
-> recall under multi-objective, anti-degenerate guards, and a triage explainer that turns an
-> alert into a cause + suggested action. Topology-tier self-improvement, the zero-code MCP/OTel
-> proxy, and the dashboard are Phase 3.
+> **Status: Phase 3 (topology self-improvement + dashboard + queryable monitor).** On top of
+> Phases 1–2: a MAP-Elites quality-diversity search over the detector-ensemble configuration
+> (with plateau detection), a zero-dependency self-contained HTML dashboard (drift timeline,
+> self-improvement curve, audit log, ensemble niches), a `DriftMonitor` query facade with an
+> optional FastMCP server. Remaining: a streaming OTLP receiver for fully zero-code ingest.
 
 ## Why this exists
 
@@ -52,10 +51,12 @@ The four hardest design questions were worked out before implementation. Each do
 ```bash
 uv venv --python 3.11
 uv pip install -e ".[dev]"
-uv run pytest                              # run the test suite
-uv run python examples/detect_demo.py      # learn -> inject faults -> watch it alert + triage
-uv run python examples/benchmark.py        # the benchmark with confidence intervals
+uv run pytest                                # run the test suite
+uv run python examples/detect_demo.py        # learn -> inject faults -> watch it alert + triage
+uv run python examples/benchmark.py          # the benchmark with confidence intervals
 uv run python examples/self_improve_demo.py  # the skill tier self-improving (held-out curve)
+uv run python examples/topology_demo.py      # MAP-Elites search over ensemble configs
+uv run python examples/dashboard_demo.py     # writes a self-contained HTML dashboard
 ```
 
 ### Instrument an agent with the SDK
@@ -138,9 +139,28 @@ The detection engine improves itself, under a governance layer that records ever
 - **Anti-plateau (design doc 01).** A quality-diversity archive keyed by drift type (diverse by
   construction), a multi-objective gate (so "alert on everything" / "alert on nothing" both
   lose), and an explicit plateau detector on the held-out recall curve.
+- **Topology tier (working).** A **MAP-Elites** quality-diversity search over the
+  detector-ensemble configuration (sustained-rule window/hits, the FP-budget split across
+  tracks, warmup) — keeping the best config per *behavioral niche* rather than hill-climbing one
+  scalar, with the same multi-objective acceptance and an explicit plateau detector. On this
+  benchmark it explores diverse niches, the plateau detector fires, and it *confirms the
+  hand-tuned default is near-optimal* — a rigorous negative result (which the brief values) that
+  validates the machinery. `uv run python examples/topology_demo.py`.
 - **Triage explainer.** Turns an alert into a suspected cause and a suggested action (e.g.
   *"recognized cost-blowup drift … set a per-step token budget"*), with a hook for a local-LLM
   narrator (the prompt-tier optimization target).
+
+## Dashboard & zero-code monitoring
+
+- **Self-contained HTML dashboard** (no server, no JS framework — inline SVG + CSS): the drift
+  timeline, the self-improvement curve, the audit log with its verified hash-chain, and the
+  evolving ensemble niches. `uv run python examples/dashboard_demo.py` writes a single openable
+  `.html`.
+- **`DriftMonitor`** is a queryable runtime facade (`ingest` a run → scored verdict; `drift_status`,
+  `recent_alerts`, `baselines`, `status`) — the surface a zero-code form factor exposes. An
+  optional **FastMCP server** (`pip install 'bellwether[mcp]'`) wraps it as MCP tools so clients
+  can query drift status without code changes; OpenTelemetry traces feed the same path via the
+  `agentrun_from_otel_spans` normalizer.
 
 ## Architecture (target)
 
@@ -163,7 +183,7 @@ agent traces ─▶ INGEST/COLLECTOR ─▶ FEATURE EXTRACTORS ─▶ BASELINE M
 | **0** | Scaffold + canonical schema + OTel ingest + DuckDB store + fixture fault-injection harness | **done** |
 | **1** | Shippable v1: SDK, feature extractors, baseline manager, calibrated detector ensemble, benchmark with CIs | **done** |
 | **2** | Governance/audit + self-improvement (skill tier) + multi-objective gate + triage explainer | **done** |
-| 3 | Topology self-improvement + MCP/OTel proxy (zero-code) + dashboard | next |
+| **3** | Topology self-improvement (MAP-Elites) + HTML dashboard + DriftMonitor/MCP facade | **done** (OTLP receiver remaining) |
 | 4 | Optional: QLoRA triage fine-tune, multi-agent/coordination drift, published benchmark | planned |
 
 ## Project layout
@@ -180,10 +200,13 @@ src/bellwether/
   eval/                metrics + N-seed benchmark with bootstrap CIs
   sdk/                 the Bellwether SDK (@watch instrumentation)
   governance/          append-only, hash-chained, tamper-evident audit log
-  improve/             skill-tier self-improvement: generator/gate/archive/loop
+  improve/             self-improvement: skill tier (loop) + topology tier (MAP-Elites)
   triage/              alert -> human cause + suggested action (LLM-pluggable)
+  dashboard/           self-contained HTML report (inline SVG, no deps)
+  monitor.py           DriftMonitor query facade (MCP-tool surface)
+  mcp_server.py        optional FastMCP server (pip install bellwether[mcp])
 docs/design/           the four [BRAINSTORM REQUIRED] design decisions
-examples/              quickstart · detect_demo · benchmark · self_improve_demo
+examples/              detect_demo · benchmark · self_improve_demo · topology_demo · dashboard_demo
 tests/                 L0 unit + L1/L3 property + integration tests
 ```
 

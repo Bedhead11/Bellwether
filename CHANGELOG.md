@@ -5,6 +5,22 @@ All notable changes to BELLWETHER are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+### Phase 3 — Topology self-improvement + dashboard + queryable monitor
+
+- `improve/topology.py`: MAP-Elites quality-diversity search over the detector-ensemble
+  configuration (sustained-rule window/hits, FP-budget split across tracks, warmup), with
+  multi-objective Pareto acceptance per behavioral niche, plateau detection + exploration boosts,
+  and full audit logging. On the benchmark it explores diverse niches and confirms the hand-tuned
+  default is near-optimal — a rigorous negative result that validates the machinery.
+- `dashboard/`: a self-contained, dependency-free HTML dashboard (inline SVG + CSS) rendering the
+  drift timeline, self-improvement curve, audit log (with hash-chain integrity), and ensemble
+  niches.
+- `monitor.py`: `DriftMonitor` query facade — ingest a run → scored verdict + audited alert, plus
+  `drift_status`/`recent_alerts`/`baselines`/`status` queries returning serializable dicts.
+- `mcp_server.py`: optional FastMCP server wrapping `DriftMonitor` as MCP tools (lazy import,
+  `pip install 'bellwether[mcp]'`); no hard MCP dependency.
+- All quality gates green; `examples/topology_demo.py` and `examples/dashboard_demo.py` added.
+
 ### Phase 2 — Governance + self-improvement (skill tier)
 
 - `governance/`: append-only, hash-chained, tamper-evident audit log; `verify()` detects any

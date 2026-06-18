@@ -19,6 +19,12 @@ from bellwether.improve.loop import (
     metric_vector_from_report,
 )
 from bellwether.improve.skills import DriftSignature, SkillLibrary
+from bellwether.improve.topology import (
+    TopologyHistory,
+    TopologySearch,
+    descriptor,
+    mutate_config,
+)
 
 __all__ = [
     "DriftSignature",
@@ -31,4 +37,8 @@ __all__ = [
     "ImprovementHistory",
     "Archive",
     "metric_vector_from_report",
+    "TopologySearch",
+    "TopologyHistory",
+    "mutate_config",
+    "descriptor",
 ]

@@ -25,6 +25,10 @@ htmlcov/
 data/
 .bellwether/
 
+# Generated artifacts
+bellwether_dashboard.html
+*.audit.jsonl
+
 # Env / secrets
 .env
 .env.*
