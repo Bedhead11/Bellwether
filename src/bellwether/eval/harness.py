@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from bellwether.baseline import BaselineManager
 from bellwether.detect import DriftScorer, ScoringConfig
 from bellwether.detect.engine import calibrate_threshold
+from bellwether.detect.report import SignatureProvider
 from bellwether.eval.metrics import EpisodeOutcome, MetricSet, evaluate_episode, metric_set
 from bellwether.fixtures import FAULT_INJECTORS, FaultSpec, FixtureAgent, faulted_run
 from bellwether.stats import bootstrap_ci
@@ -48,6 +49,7 @@ class BenchmarkConfig:
     min_samples: int = 30
     boot_seed: int = 12345
     scoring: ScoringConfig | None = None
+    library: SignatureProvider | None = None  # skill-tier signatures consulted during scoring
 
     def scoring_config(self) -> ScoringConfig:
         if self.scoring is not None:
@@ -115,7 +117,7 @@ def _run_one_seed(
         mgr.learn(agent.clean_run(seed=s))
     baseline = mgr.baseline_for(agent.clean_run(seed=base))
     assert baseline is not None
-    scorer = DriftScorer(cfg.scoring_config())
+    scorer = DriftScorer(cfg.scoring_config(), library=cfg.library)
     thr = calibrate_threshold(
         scorer, baseline, [agent.clean_run(seed=s) for s in cal], target_fp_rate=cfg.target_fp_rate
     )

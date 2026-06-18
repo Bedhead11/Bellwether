@@ -7,7 +7,9 @@ principle).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Protocol
 
 from bellwether.features import FeatureFamily
 
@@ -111,3 +113,16 @@ class DriftReport:
             f"signature:{a.signature}" if a.signature else f"{a.primary_family}/{a.primary_feature}"
         )
         return f"[DRIFT] {self.run_id}: {what} at {where} (score={a.drift_score:.3f})"
+
+
+class SignatureProvider(Protocol):
+    """Structural interface the engine needs from a skill library (avoids a detect→improve dep).
+
+    ``SkillLibrary`` satisfies this; typing against the protocol keeps the dependency one-way
+    (improve → detect) and breaks the import cycle.
+    """
+
+    @property
+    def names(self) -> list[str]: ...
+
+    def signature_scores(self, sub_scores: Sequence[SubScore]) -> dict[str, float]: ...

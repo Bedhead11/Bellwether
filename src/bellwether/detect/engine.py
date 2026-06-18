@@ -26,9 +26,14 @@ from dataclasses import dataclass
 from bellwether.baseline import Baseline, BaselineManager
 from bellwether.detect.aggregator import aggregate, family_contributions
 from bellwether.detect.detectors import score_categorical, score_numeric
-from bellwether.detect.report import Alert, DriftReport, ObservationScore, Thresholds
+from bellwether.detect.report import (
+    Alert,
+    DriftReport,
+    ObservationScore,
+    SignatureProvider,
+    Thresholds,
+)
 from bellwether.features import FeatureObservation, extract_observations
-from bellwether.improve.skills import SkillLibrary
 from bellwether.schema import AgentRun
 
 # Sentinel "never a hit / never alerts at any threshold" (real drift scores live in [0, 1]).
@@ -100,7 +105,7 @@ class DriftScorer:
     """Scores runs against baselines and raises calibrated drift alerts."""
 
     def __init__(
-        self, config: ScoringConfig | None = None, library: SkillLibrary | None = None
+        self, config: ScoringConfig | None = None, library: SignatureProvider | None = None
     ) -> None:
         self.config = config or ScoringConfig()
         self.library = library

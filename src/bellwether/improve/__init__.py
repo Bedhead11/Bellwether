@@ -10,6 +10,25 @@ specific pattern more sharply than the generic detector — and it is calibrated
 false-positive share, so adding signatures improves sensitivity without inflating false alarms.
 """
 
+from bellwether.improve.gate import GateDecision, GovernanceGate, MetricVector
+from bellwether.improve.generator import mine_signature
+from bellwether.improve.loop import (
+    Archive,
+    ImprovementHistory,
+    SelfImprovementLoop,
+    metric_vector_from_report,
+)
 from bellwether.improve.skills import DriftSignature, SkillLibrary
 
-__all__ = ["DriftSignature", "SkillLibrary"]
+__all__ = [
+    "DriftSignature",
+    "SkillLibrary",
+    "mine_signature",
+    "GovernanceGate",
+    "GateDecision",
+    "MetricVector",
+    "SelfImprovementLoop",
+    "ImprovementHistory",
+    "Archive",
+    "metric_vector_from_report",
+]
