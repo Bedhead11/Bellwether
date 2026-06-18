@@ -1,7 +1,9 @@
 # Design Decision #2 — Testing & Evaluation Harness
 
-> Status: **Decided** (design). The L0/L1/L3 layers begin in Phase 0–1 (they generate the
-> ground truth everything else needs); L2 and the CI gate harden in Phase 2.
+> Status: **Implemented.** L0 (unit) and L1 (synthetic fault injection) ship in Phase 0–1; L3
+> (metamorphic, via Hypothesis) in `tests/test_metamorphic.py`; L2 (replay-injection into recorded
+> SDK/OTLP traces) in `bellwether.eval.replay`; L4 (statistical CI gate) as the `bellwether
+> eval-gate` command wired into CI.
 
 ## Problem
 

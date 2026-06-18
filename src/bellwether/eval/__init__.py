@@ -8,6 +8,7 @@ bootstrap confidence intervals — never single-run numbers (brief §6).
 
 from bellwether.eval.harness import BenchmarkConfig, BenchmarkReport, run_benchmark
 from bellwether.eval.metrics import EpisodeOutcome, MetricSet, evaluate_episode, metric_set
+from bellwether.eval.replay import inject_into_run
 
 __all__ = [
     "BenchmarkConfig",
@@ -17,4 +18,5 @@ __all__ = [
     "MetricSet",
     "evaluate_episode",
     "metric_set",
+    "inject_into_run",
 ]
