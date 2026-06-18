@@ -41,9 +41,12 @@ class ScoringConfig:
     laplace_alpha: float = 1.0  # categorical smoothing
     window_w: int = 3  # sliding window size for the k-of-w sustained rule
     min_hits_k: int = 2  # required hits within the window
-    step_budget_frac: float = 0.5  # share of the FP budget given to the step track
-    default_step_threshold: float = 0.99
-    default_run_threshold: float = 0.99
+    # Shares of the FP budget across the three tracks (critical / sustained-step / run); summed
+    # and normalized, so they need not add to exactly 1.
+    crit_budget_frac: float = 0.34
+    step_budget_frac: float = 0.33
+    run_budget_frac: float = 0.33
+    default_threshold: float = 0.999
 
 
 class DriftScorer:
@@ -75,25 +78,53 @@ class DriftScorer:
         """Score every observation of a run (per-step + run-summary) against the baseline."""
         return [self._score_observation(o, baseline) for o in extract_observations(run)]
 
+    # --- critical track: single overwhelming step ---------------------------------------
+
+    @staticmethod
+    def _critical_alert(
+        scores: Sequence[ObservationScore], threshold: float
+    ) -> tuple[bool, int | None]:
+        """Fire at the first step whose drift score alone clears the critical threshold."""
+        for obs in scores:
+            if obs.kind != "step" or obs.warmup:
+                continue
+            if obs.drift_score >= threshold:
+                return (True, obs.step_index)
+        return (False, None)
+
+    @staticmethod
+    def critical_level(scores: Sequence[ObservationScore]) -> float:
+        """Largest critical threshold at which a single step still alerts (max step score)."""
+        level = _NEVER
+        for obs in scores:
+            if obs.kind == "step" and not obs.warmup:
+                level = max(level, obs.drift_score)
+        return level
+
     # --- step track: k-of-w sustained rule ----------------------------------------------
 
     def _step_sustained(
         self, scores: Sequence[ObservationScore], threshold: float
     ) -> tuple[bool, int | None]:
-        """Return (triggered, t_alert). ``t_alert`` is the earliest hit in the firing window."""
+        """Return (triggered, t_alert).
+
+        ``t_alert`` is the step at which the k-of-w rule becomes satisfied — i.e. when the alert
+        would actually fire and an operator would be notified. We deliberately do *not* back-date
+        it to the earliest hit in the window: that would overstate lead-time. This is the honest,
+        operationally meaningful detection time.
+        """
         w = self.config.window_w
         k = self.config.min_hits_k
-        window: list[tuple[int, bool]] = []  # (step_index, is_hit) for the last w steps
+        window: list[bool] = []  # is_hit for the last w steps
         for obs in scores:
             if obs.kind != "step":
                 continue
             is_hit = (not obs.warmup) and obs.drift_score >= threshold
-            window.append((obs.step_index if obs.step_index is not None else -1, is_hit))
+            window.append(is_hit)
             if len(window) > w:
                 window.pop(0)
-            hits = [idx for idx, hit in window if hit]
-            if len(hits) >= k:
-                return (True, min(hits))
+            if sum(window) >= k:
+                return (True, obs.step_index)
         return (False, None)
 
     def step_alert_level(self, scores: Sequence[ObservationScore]) -> float:
@@ -134,13 +165,18 @@ class DriftScorer:
     def evaluate(
         self, run: AgentRun, baseline: Baseline, thresholds: Thresholds | None = None
     ) -> DriftReport:
-        thr = thresholds or Thresholds(
-            step=self.config.default_step_threshold,
-            run=self.config.default_run_threshold,
-        )
+        d = self.config.default_threshold
+        thr = thresholds or Thresholds(critical=d, step=d, run=d)
         scores = self.score_run(run, baseline)
 
-        triggered, t_alert = self._step_sustained(scores, thr.step)
+        # Step-level detection: a single critical step OR a sustained k-of-w streak. The run's
+        # step alert time is the earlier of the two.
+        crit_trig, t_crit = self._critical_alert(scores, thr.critical)
+        sust_trig, t_sust = self._step_sustained(scores, thr.step)
+        step_times = [t for t in (t_crit, t_sust) if t is not None]
+        triggered = crit_trig or sust_trig
+        t_alert = min(step_times) if step_times else None
+
         rs = self._run_summary_score(scores)
         if not triggered and rs is not None and not rs.warmup and rs.drift_score >= thr.run:
             triggered, t_alert = True, None  # detected only at run end
@@ -211,12 +247,17 @@ def calibrate_threshold(
     """
     runs = list(benign_runs)
     scored = [scorer.score_run(r, baseline) for r in runs]
+    crit_levels = [scorer.critical_level(s) for s in scored]
     step_levels = [scorer.step_alert_level(s) for s in scored]
     run_levels = [scorer.run_summary_level(s) for s in scored]
 
-    step_target = target_fp_rate * scorer.config.step_budget_frac
-    run_target = target_fp_rate * (1.0 - scorer.config.step_budget_frac)
+    cfg = scorer.config
+    total = cfg.crit_budget_frac + cfg.step_budget_frac + cfg.run_budget_frac
+    crit_target = target_fp_rate * cfg.crit_budget_frac / total
+    step_target = target_fp_rate * cfg.step_budget_frac / total
+    run_target = target_fp_rate * cfg.run_budget_frac / total
     return Thresholds(
+        critical=_smallest_threshold_within_budget(crit_levels, crit_target),
         step=_smallest_threshold_within_budget(step_levels, step_target),
         run=_smallest_threshold_within_budget(run_levels, run_target),
     )

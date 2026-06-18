@@ -1,9 +1,11 @@
 """BELLWETHER — behavioral drift detection for AI agents.
 
-Public surface is intentionally tiny in Phase 0. The canonical event schema is the
-contract every other subsystem is built against.
+The canonical ``AgentRun`` schema is the contract every subsystem is built against; the
+``Bellwether`` SDK is the adoption wedge (instrument an agent, get drift detection).
 """
 
+from bellwether.baseline import BaselineManager
+from bellwether.detect import DriftReport, DriftScorer, ScoringConfig, Thresholds
 from bellwether.schema import (
     SCHEMA_VERSION,
     AgentRun,
@@ -15,6 +17,7 @@ from bellwether.schema import (
     SpanKind,
     SpanStatus,
 )
+from bellwether.sdk import Bellwether
 
 __all__ = [
     "SCHEMA_VERSION",
@@ -26,6 +29,12 @@ __all__ = [
     "Span",
     "SpanKind",
     "SpanStatus",
+    "Bellwether",
+    "BaselineManager",
+    "DriftScorer",
+    "ScoringConfig",
+    "Thresholds",
+    "DriftReport",
 ]
 
 __version__ = "0.0.1"

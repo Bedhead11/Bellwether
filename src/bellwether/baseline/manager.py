@@ -144,9 +144,7 @@ class BaselineManager:
     def to_dict(self) -> dict[str, object]:
         return {
             "window_size": self.window_size,
-            "baselines": {
-                "\x1f".join(key): b.to_dict() for key, b in self._baselines.items()
-            },
+            "baselines": {"\x1f".join(key): b.to_dict() for key, b in self._baselines.items()},
         }
 
     @classmethod

@@ -47,8 +47,16 @@ class ObservationScore:
 
 @dataclass(frozen=True, slots=True)
 class Thresholds:
-    """Per-track alert thresholds (step track and run-summary track), set by calibration."""
+    """Per-track alert thresholds, set by calibration.
 
+    Three independent tracks, each given a share of the false-positive budget:
+    - ``critical``: a single step this anomalous alerts immediately (fast path for overwhelming
+      drift like a brand-new tool or a latency spike);
+    - ``step``: the k-of-w sustained rule for moderate, persistent step drift;
+    - ``run``: the run-summary track for purely aggregate drift.
+    """
+
+    critical: float
     step: float
     run: float
 

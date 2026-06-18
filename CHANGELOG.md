@@ -5,6 +5,28 @@ All notable changes to BELLWETHER are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+### Phase 1 — Shippable v1 (detection engine + SDK + benchmark)
+
+- `features/`: pure, deterministic extractors turning a run into an ordered
+  `FeatureObservation` sequence (per-step + run-summary) covering all six families.
+- `stats.py`: robust estimators (median/MAD), distribution-free conformal p-values, Šidák
+  multiplicity correction, percentile-bootstrap CIs — dependency-free and deterministic.
+- `baseline/`: per-(agent, task_class, fingerprint) windowed baselines with warmup-aware
+  cold-start and JSON save/load.
+- `detect/`: per-feature conformal/novelty detectors → Šidák aggregator with attribution →
+  engine with three independently-calibrated tracks (critical single-step / k-of-w sustained /
+  run-summary), each given a share of the false-positive budget.
+- `eval/`: metric definitions (precision/recall/F1/FP-rate/lead-time with formulas) and an
+  N-seed benchmark reporting every metric with 95% bootstrap CIs.
+- `sdk/`: the `Bellwether` SDK — `watch`/`llm`/`tool`/`agent` context managers assemble a
+  canonical run via contextvars, redact at ingest, and route to store + live scorer; plus
+  `mark_deploy` for intended-change disambiguation.
+- Benchmark (20 seeds, FP budget 2%): precision 0.973, detection-rate 0.878, timely recall
+  0.730, FP-rate 0.013, median lead-time ~2.2 steps. All six fault types attributed to the
+  correct family.
+- 92 tests green; mypy --strict and ruff clean. `examples/detect_demo.py` and
+  `examples/benchmark.py` added.
+
 ### Phase 0 — Scaffold & data faucet
 
 Design (the four `[BRAINSTORM REQUIRED]` decisions, in `docs/design/`):

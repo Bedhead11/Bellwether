@@ -21,10 +21,11 @@ the intelligence layer on top of tracing: it *consumes* OpenTelemetry traces and
   drift signatures, and evolves its detector ensemble — every change logged with rationale and
   before/after metrics.
 
-> **Status: Phase 0 (scaffold & data faucet).** The canonical schema, OTel ingest, DuckDB
-> store, PII redaction, and the fixture-agent fault-injection harness are in place and tested.
-> The detection engine, baseline manager, and self-improvement loop are designed (see
-> [`docs/design`](docs/design/)) and land in later phases.
+> **Status: Phase 1 (shippable v1).** A working end-to-end detector: the `Bellwether` SDK,
+> feature extractors across all six families, a per-agent baseline manager, a calibrated drift
+> detector ensemble with attribution, and a benchmark reporting precision/recall/lead-time with
+> confidence intervals. The self-improvement loop is designed (see [`docs/design`](docs/design/))
+> and lands in Phase 2+.
 
 ## Why this exists
 
@@ -45,46 +46,79 @@ The four hardest design questions were worked out before implementation. Each do
 - [#4 — Baseline representation](docs/design/04-baseline-representation.md)
 - [Index & how they interlock](docs/design/00-overview.md)
 
-## Quickstart (developer)
+## Quickstart
 
 ```bash
 uv venv --python 3.11
 uv pip install -e ".[dev]"
-uv run pytest                 # run the test suite
-uv run ruff check .           # lint
-uv run mypy                   # type-check
+uv run pytest                            # run the test suite
+uv run python examples/detect_demo.py    # learn -> inject faults -> watch it alert
+uv run python examples/benchmark.py      # the benchmark with confidence intervals
 ```
 
-Generate labeled agent traces and land them in the store (the Phase 0 "data faucet"):
+### Instrument an agent with the SDK
 
 ```python
-from bellwether.fixtures import FixtureAgent, FaultSpec, generate_dataset
-from bellwether.ingest import RunStore, redact_run
+from bellwether import Bellwether, BaselineManager, DriftScorer
 
-agent = FixtureAgent(agent_id="demo", task_class="qa")
+mgr = BaselineManager()
 
-# A reproducible mix of benign runs + known, dial-able faults (ground truth for eval).
-runs = generate_dataset(
-    agent,
-    n_benign=20,
-    fault_specs=[FaultSpec("latency_injection", severity=0.7),
-                 FaultSpec("induced_loop", severity=0.8)],
-    n_per_fault=5,
+# Phase 1: learn a behavioral baseline from healthy runs.
+bw = Bellwether(agent_id="support-bot", manager=mgr, learn=True)
+for task in healthy_tasks:
+    with bw.watch(task_class="qa"):
+        with bw.llm(model="gpt-4o-mini") as call:
+            resp = my_llm(...)
+            call.set_tokens(input=resp.in_tokens, output=resp.out_tokens)
+        with bw.tool("search", args={"q": query}):
+            results = search(query)
+
+# Phase 2: monitor — every run is scored; drift is delivered to your callback.
+monitor = Bellwether(
+    agent_id="support-bot", manager=mgr, scorer=DriftScorer(),
+    on_report=lambda r: print(r.summary()) if r.alert.triggered else None,
 )
+with monitor.watch(task_class="qa"):
+    ...  # same instrumentation; alerts fire when behavior drifts
 
-with RunStore("bellwether.duckdb") as store:
-    store.add_many(redact_run(r) for r in runs)   # PII redacted at ingest
-    print("benign:", len(store.query(has_fault=False)))
-    print("faulted:", len(store.query(has_fault=True)))
+# Declare an intended change so a deploy isn't mistaken for drift (design doc 03):
+monitor.mark_deploy(version="2.0", note="new system prompt")
 ```
 
-Normalize OpenTelemetry spans into the canonical schema:
+A drift alert names *which* signal drifted, on which agent, at which step:
+
+```
+[DRIFT] support-bot-...: tool/tool_id at step 1 (score=0.998)
+          contributing families: tool=1.00, temporal=0.95, context=0.70
+```
+
+### Or feed OpenTelemetry traces directly
 
 ```python
 from bellwether.ingest.otel import agentrun_from_otel_spans
 
 run = agentrun_from_otel_spans(otel_span_dicts, run_id="r1", agent_id="demo")
 ```
+
+## Benchmark
+
+Detection quality on the synthetic fault benchmark — 20 seeds, exact ground truth (injected
+faults), 95% bootstrap CIs, false-positive budget 2%:
+
+| metric | value (95% CI) |
+|---|---|
+| precision | 0.973 [0.962, 0.984] |
+| timely recall | 0.730 [0.714, 0.748] |
+| detection rate (caught at all) | 0.878 [0.859, 0.897] |
+| F1 | 0.833 [0.822, 0.845] |
+| **false-positive rate** | **0.013 [0.007, 0.018]** (budget 0.02) |
+| median lead-time | 2.2 steps before visible failure |
+
+Per-fault *timely* recall: `latency_injection` 0.99, `induced_loop` 1.00, `retry_storm` 1.00,
+`tool_misselection` 0.91, `cost_blowup` 0.41, `output_degradation` 0.07. The last two — subtle,
+single-direction drifts on alternating steps against a tight visible-failure line — are honestly
+hard for the static v1 and are exactly where the Phase 2+ self-improvement engine has room to
+show compounding gains. Reproduce with `uv run python examples/benchmark.py`.
 
 ## Architecture (target)
 
@@ -105,8 +139,8 @@ agent traces ─▶ INGEST/COLLECTOR ─▶ FEATURE EXTRACTORS ─▶ BASELINE M
 | Phase | Deliverable | State |
 |---|---|---|
 | **0** | Scaffold + canonical schema + OTel ingest + DuckDB store + fixture fault-injection harness | **done** |
-| 1 | Shippable v1: SDK, feature extractors, baseline manager, first detector ensemble, synthetic benchmark with CIs | next |
-| 2 | Governance/audit + self-improvement (prompt & skill tiers) + CI-gated eval harness | planned |
+| **1** | Shippable v1: SDK, feature extractors, baseline manager, calibrated detector ensemble, benchmark with CIs | **done** |
+| 2 | Governance/audit + self-improvement (prompt & skill tiers) + CI-gated eval harness | next |
 | 3 | Topology self-improvement + MCP/OTel proxy (zero-code) + dashboard | planned |
 | 4 | Optional: QLoRA triage fine-tune, multi-agent/coordination drift, published benchmark | planned |
 
@@ -115,16 +149,17 @@ agent traces ─▶ INGEST/COLLECTOR ─▶ FEATURE EXTRACTORS ─▶ BASELINE M
 ```
 src/bellwether/
   schema.py            canonical, versioned AgentRun event
-  ingest/
-    store.py           DuckDB-backed run store (local-first, zero infra)
-    otel.py            OpenTelemetry span -> AgentRun normalizer
-    redaction.py       ingest-time PII redaction (first-class)
-  fixtures/
-    agent.py           controllable synthetic agent (ground-truth generator)
-    faults.py          dial-able fault taxonomy (latency, loop, cost, ...)
-    dataset.py         labeled benign+faulted dataset generation
+  stats.py             robust estimators, conformal p-values, bootstrap CIs
+  ingest/              DuckDB store · OTel normalizer · PII redaction
+  fixtures/            controllable synthetic agent + dial-able fault taxonomy
+  features/            pure extractors: run -> FeatureObservation sequence
+  baseline/            per-(agent, task_class, fingerprint) windowed baselines
+  detect/              conformal detectors -> aggregator -> calibrated engine
+  eval/                metrics + N-seed benchmark with bootstrap CIs
+  sdk/                 the Bellwether SDK (@watch instrumentation)
 docs/design/           the four [BRAINSTORM REQUIRED] design decisions
-tests/                 L0 unit + L1/L3 fixture tests
+examples/              quickstart · detect_demo · benchmark
+tests/                 L0 unit + L1/L3 property + integration tests
 ```
 
 ## License

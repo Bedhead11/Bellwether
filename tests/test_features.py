@@ -54,19 +54,14 @@ def test_benign_run_has_zero_repeat_and_errors() -> None:
 def test_loop_fault_raises_repeat_count() -> None:
     run = faulted_run(FixtureAgent(), 5, FaultSpec("induced_loop", 0.8, onset_step=1))
     repeats = [
-        n.value
-        for o in step_observations(run)
-        for n in o.numerics
-        if n.name == "repeat_count"
+        n.value for o in step_observations(run) for n in o.numerics if n.name == "repeat_count"
     ]
     assert max(repeats) >= 1.0  # the loop repeats an identical (tool, args) call
 
 
 def test_retry_fault_sets_is_error() -> None:
     run = faulted_run(FixtureAgent(), 5, FaultSpec("retry_storm", 0.8, onset_step=1))
-    errors = [
-        n.value for o in step_observations(run) for n in o.numerics if n.name == "is_error"
-    ]
+    errors = [n.value for o in step_observations(run) for n in o.numerics if n.name == "is_error"]
     assert sum(errors) >= 1.0
 
 
