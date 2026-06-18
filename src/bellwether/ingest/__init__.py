@@ -6,7 +6,8 @@ Phase 0 ships:
 - ``redaction``: ingest-time PII redaction (first-class per the brief).
 """
 
+from bellwether.ingest.otlp import parse_otlp_json
 from bellwether.ingest.redaction import RedactionConfig, redact_run
 from bellwether.ingest.store import RunStore
 
-__all__ = ["RunStore", "RedactionConfig", "redact_run"]
+__all__ = ["RunStore", "RedactionConfig", "redact_run", "parse_otlp_json"]

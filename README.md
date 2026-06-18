@@ -21,11 +21,11 @@ the intelligence layer on top of tracing: it *consumes* OpenTelemetry traces and
   drift signatures, and evolves its detector ensemble — every change logged with rationale and
   before/after metrics.
 
-> **Status: Phase 3 (topology self-improvement + dashboard + queryable monitor).** On top of
-> Phases 1–2: a MAP-Elites quality-diversity search over the detector-ensemble configuration
-> (with plateau detection), a zero-dependency self-contained HTML dashboard (drift timeline,
-> self-improvement curve, audit log, ensemble niches), a `DriftMonitor` query facade with an
-> optional FastMCP server. Remaining: a streaming OTLP receiver for fully zero-code ingest.
+> **Status: all phases implemented (0–4) + all four design decisions.** A working detector with
+> SDK and benchmark; governance + self-improvement (skill & topology tiers); drift-vs-intended-
+> change runtime; triage; a zero-dependency HTML dashboard; a `DriftMonitor` query facade with an
+> optional FastMCP server and OTLP/JSON zero-code ingest; and multi-agent **coordination drift**
+> detection. 150+ tests, `mypy --strict` and `ruff` clean, PyPI-buildable.
 
 ## Why this exists
 
@@ -191,8 +191,10 @@ emergent loop from a *healthy* cyclic workflow needs a richer signal and is left
 - **`DriftMonitor`** is a queryable runtime facade (`ingest` a run → scored verdict; `drift_status`,
   `recent_alerts`, `baselines`, `status`) — the surface a zero-code form factor exposes. An
   optional **FastMCP server** (`pip install 'bellwether[mcp]'`) wraps it as MCP tools so clients
-  can query drift status without code changes; OpenTelemetry traces feed the same path via the
-  `agentrun_from_otel_spans` normalizer.
+  can query drift status without code changes.
+- **Zero-code OpenTelemetry ingest**: point an agent's OTLP/HTTP exporter at BELLWETHER and
+  `monitor.ingest_otlp(payload)` parses the OTLP/JSON trace export (no OTel SDK dependency),
+  normalizes each trace to an `AgentRun`, and scores it — no agent-side code changes.
 
 ## Architecture (target)
 

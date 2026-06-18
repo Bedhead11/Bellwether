@@ -11,11 +11,12 @@ dicts suitable for serialization to an MCP/JSON client.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from bellwether.baseline import BaselineManager
 from bellwether.detect import DriftReport, DriftScorer, Thresholds
 from bellwether.governance import AuditLog, EventType
-from bellwether.ingest import RedactionConfig, RunStore, redact_run
+from bellwether.ingest import RedactionConfig, RunStore, parse_otlp_json, redact_run
 from bellwether.schema import AgentRun
 
 
@@ -72,6 +73,13 @@ class DriftMonitor:
                 },
             )
         return report
+
+    def ingest_otlp(
+        self, payload: dict[str, Any], *, agent_id: str | None = None, task_class: str | None = None
+    ) -> list[DriftReport | None]:
+        """Zero-code ingest: parse an OTLP/JSON trace export and score each trace as a run."""
+        runs = parse_otlp_json(payload, agent_id=agent_id, task_class=task_class)
+        return [self.ingest(run) for run in runs]
 
     # --- queries (MCP-tool surface) -----------------------------------------------------
 
