@@ -81,6 +81,19 @@ _SIGNATURE_KB: dict[str, tuple[str, str]] = {
         "recognized latency drift: per-step latency rose",
         "check provider/tool latency and timeouts",
     ),
+    # Multi-agent coordination signatures (the named unsolved problem).
+    "ping_pong": (
+        "recognized coordination drift: two agents are ping-ponging work back and forth",
+        "inspect the handoff/termination criteria between those two agents; add a turn cap",
+    ),
+    "role_collapse": (
+        "recognized coordination drift: one agent has taken over the division of labor",
+        "check routing/delegation — other agents are idle; verify role prompts and tool access",
+    ),
+    "handoff_storm": (
+        "recognized coordination drift: excessive agent-to-agent churn (handoff storm)",
+        "review the orchestration policy; agents are re-delegating instead of making progress",
+    ),
 }
 
 _DEFAULT = (

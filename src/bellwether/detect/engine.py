@@ -155,16 +155,8 @@ class DriftScorer:
         ]
 
     @staticmethod
-    def _signature_step_seq(scores: Sequence[ObservationScore], name: str) -> list[_StepPoint]:
-        return [
-            (
-                o.step_index if o.step_index is not None else -1,
-                o.signature_scores.get(name, 0.0),
-                o.warmup,
-            )
-            for o in scores
-            if o.kind == "step"
-        ]
+    def _signature_obs_score(obs: ObservationScore, name: str) -> float:
+        return 0.0 if obs.warmup else obs.signature_scores.get(name, 0.0)
 
     @staticmethod
     def _run_summary_score(scores: Sequence[ObservationScore]) -> ObservationScore | None:
@@ -187,7 +179,11 @@ class DriftScorer:
         return rs.drift_score
 
     def signature_level(self, scores: Sequence[ObservationScore], name: str) -> float:
-        return _critical_level(self._signature_step_seq(scores, name))
+        # A signature may match step features OR run-summary features (e.g. coordination), so we
+        # take the max focused score over ALL non-warmup observations.
+        return max(
+            (self._signature_obs_score(o, name) for o in scores if not o.warmup), default=_NEVER
+        )
 
     # --- run-level verdict ---------------------------------------------------------------
 
@@ -207,18 +203,23 @@ class DriftScorer:
         step_times = [t for t in (t_crit, t_sust) if t is not None]
         triggered = crit_trig or sust_trig
 
-        # Signature tracks (skill tier).
+        # Signature tracks (skill tier): a signature fires at the first non-warmup observation
+        # whose focused score clears its threshold. Signatures may match step features OR
+        # run-summary features (e.g. coordination), so we scan all observations in order.
         fired_signature: str | None = None
         if self.library is not None:
             for name in self.library.names:
                 sig_thr = thr.signatures.get(name, d)
-                sig_trig, t_sig = _critical_scan(self._signature_step_seq(scores, name), sig_thr)
-                if sig_trig:
-                    triggered = True
-                    if t_sig is not None:
-                        step_times.append(t_sig)
-                    if fired_signature is None:
-                        fired_signature = name
+                for obs in scores:
+                    if obs.warmup:
+                        continue
+                    if self._signature_obs_score(obs, name) >= sig_thr:
+                        triggered = True
+                        if obs.step_index is not None:
+                            step_times.append(obs.step_index)
+                        if fired_signature is None:
+                            fired_signature = name
+                        break
 
         t_alert = min(step_times) if step_times else None
 

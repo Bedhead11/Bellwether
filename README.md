@@ -161,6 +161,26 @@ The detection engine improves itself, under a governance layer that records ever
   *"recognized cost-blowup drift … set a per-step token budget"*), with a hook for a local-LLM
   narrator (the prompt-tier optimization target).
 
+## Multi-agent coordination drift (the differentiator)
+
+The incumbents measure per-agent point metrics; *"quantifying coordination quality and
+emergent/silent behavioral change"* is the named unsolved problem — and BELLWETHER's lane. A
+multi-agent system (planner → researcher → writer → reviewer) is decomposed into a **coordination
+feature family** — role balance, handoff structure, ping-pong rate, cross-agent loops — that feeds
+the *same* baseline/detector/eval machinery. Three coordination pathologies are detected and
+attributed via skill-tier signatures **even though each agent's own per-step behavior (latency,
+tokens) stays locally normal**:
+
+```
+[ok]    research-crew healthy: no drift
+[DRIFT] ping_pong     → inspect handoff/termination criteria between the two agents; add a turn cap
+[DRIFT] role_collapse → other agents are idle; check routing/delegation and role prompts
+[DRIFT] handoff_storm → agents are re-delegating instead of progressing; review orchestration
+```
+
+`uv run python examples/coordination_demo.py`. (Honest limitation: distinguishing a *pathological*
+emergent loop from a *healthy* cyclic workflow needs a richer signal and is left as future work.)
+
 ## Dashboard & zero-code monitoring
 
 - **Self-contained HTML dashboard** (no server, no JS framework — inline SVG + CSS): the drift
@@ -195,7 +215,7 @@ agent traces ─▶ INGEST/COLLECTOR ─▶ FEATURE EXTRACTORS ─▶ BASELINE M
 | **1** | Shippable v1: SDK, feature extractors, baseline manager, calibrated detector ensemble, benchmark with CIs | **done** |
 | **2** | Governance/audit + self-improvement (skill tier) + multi-objective gate + triage explainer | **done** |
 | **3** | Topology self-improvement (MAP-Elites) + HTML dashboard + DriftMonitor/MCP facade | **done** (OTLP receiver remaining) |
-| 4 | Optional: QLoRA triage fine-tune, multi-agent/coordination drift, published benchmark | planned |
+| **4** | Multi-agent **coordination drift** detection + attribution | **done** (QLoRA fine-tune intentionally skipped — not worth it yet) |
 
 ## Project layout
 
@@ -209,6 +229,7 @@ src/bellwether/
   baseline/            per-(agent, task_class, fingerprint) windowed baselines
   detect/              conformal detectors -> aggregator -> calibrated engine
   eval/                metrics + N-seed benchmark with bootstrap CIs
+  change/              drift vs. intended-change: fingerprint + Page-Hinkley + accept-new-normal
   sdk/                 the Bellwether SDK (@watch instrumentation)
   governance/          append-only, hash-chained, tamper-evident audit log
   improve/             self-improvement: skill tier (loop) + topology tier (MAP-Elites)
@@ -216,6 +237,7 @@ src/bellwether/
   dashboard/           self-contained HTML report (inline SVG, no deps)
   monitor.py           DriftMonitor query facade (MCP-tool surface)
   mcp_server.py        optional FastMCP server (pip install bellwether[mcp])
+  cli.py               `bellwether` CLI; fixtures/multiagent.py: coordination drift
 docs/design/           the four [BRAINSTORM REQUIRED] design decisions
 examples/              detect_demo · benchmark · self_improve_demo · topology_demo · dashboard_demo
 tests/                 L0 unit + L1/L3 property + integration tests

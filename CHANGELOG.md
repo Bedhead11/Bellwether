@@ -5,6 +5,21 @@ All notable changes to BELLWETHER are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+### Phase 4 — Multi-agent coordination drift (the differentiator)
+
+- Added `FeatureFamily.COORDINATION` and `coordination_features` (role balance/entropy/imbalance,
+  handoff count/rate, ping-pong rate, cross-agent loop, transition entropy) — populated only for
+  multi-agent runs (spans carrying `agent_role`), fed through the *same* baseline/detector/eval
+  machinery.
+- `fixtures/multiagent.py`: a `MultiAgentSystem` fixture (planner→researcher→writer→reviewer
+  pipeline) and three coordination fault injectors (ping_pong, role_collapse, handoff_storm).
+- The skill tier generalizes to coordination: signatures over run-summary coordination features
+  detect and attribute each pathology even though each agent's per-step behavior stays normal.
+  Extended the signature track to scan the run-summary observation (not just steps).
+- Tests: coordination features shift as expected per fault; end-to-end detection (≥7/10) and
+  correct signature attribution (≥5/10) with low benign false positives. `coordination_demo.py`
+  added. Honest limitation documented: pathological loop vs. healthy cyclic workflow is future work.
+
 ### Distribution: CLI, Docker, CI eval gate
 
 - `bellwether` console entrypoint (`cli.py`): `benchmark`, `demo`, `dashboard`, `eval-gate`,

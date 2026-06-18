@@ -20,7 +20,11 @@ RUN_CONTEXT = "run"
 
 
 class FeatureFamily(StrEnum):
-    """The behavioral feature families from the brief (§3). Drives attribution."""
+    """The behavioral feature families from the brief (§3). Drives attribution.
+
+    ``COORDINATION`` covers multi-agent / emergent behavior (handoffs, role balance, cross-agent
+    loops) — the named unsolved problem (brief §1). It is only populated for multi-agent runs.
+    """
 
     STRUCTURAL = "structural"
     TOOL = "tool"
@@ -28,6 +32,7 @@ class FeatureFamily(StrEnum):
     ECONOMIC = "economic"
     SEMANTIC = "semantic"
     CONTEXT = "context"
+    COORDINATION = "coordination"
 
 
 @dataclass(frozen=True, slots=True)

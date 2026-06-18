@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections import Counter
 
 from bellwether.features.types import (
     GLOBAL_CONTEXT,
@@ -118,6 +119,80 @@ def _percentile(xs: list[float], q: float) -> float:
     return s[lo] * (1 - frac) + s[hi] * frac
 
 
+def _agent_roles(run: AgentRun) -> list[str]:
+    """The ordered sequence of agent roles across steps (multi-agent runs only).
+
+    A role is read from ``span.attributes['agent_role']``; sub-agent spans fall back to their
+    name. Runs with fewer than two distinct roles are single-agent and yield no coordination
+    features.
+    """
+    roles: list[str] = []
+    for s in _ordered_steps(run):
+        role = s.attributes.get("agent_role")
+        if role is None and s.kind == SpanKind.SUB_AGENT:
+            role = s.name
+        if role is not None:
+            roles.append(str(role))
+    return roles
+
+
+def coordination_features(run: AgentRun) -> list[NumericObs]:
+    """Multi-agent coordination features — the named unsolved problem (brief §1).
+
+    Captures *emergent* behavior across agents that each individual agent's metrics miss: role
+    balance, handoff structure, ping-pong, and cross-agent loops. Empty for single-agent runs.
+    """
+    roles = _agent_roles(run)
+    if not roles:
+        return []  # not a multi-agent run (no agent_role attributes)
+    distinct = set(roles)
+
+    n = len(roles)
+    counts = Counter(roles)
+    shares = [c / n for c in counts.values()]
+    role_entropy = -sum(s * math.log(s) for s in shares)
+    role_imbalance = max(shares)
+
+    transitions = [(roles[i], roles[i + 1]) for i in range(n - 1) if roles[i] != roles[i + 1]]
+    handoff_count = len(transitions)
+    handoff_rate = handoff_count / (n - 1) if n > 1 else 0.0
+
+    pingpong = sum(
+        1
+        for i in range(len(transitions) - 1)
+        if transitions[i + 1] == (transitions[i][1], transitions[i][0])
+    )
+    pingpong_rate = pingpong / handoff_count if handoff_count else 0.0
+
+    trans_counts = Counter(transitions)
+    cross_agent_loop = float(max(trans_counts.values()) - 1) if trans_counts else 0.0
+    tt = sum(trans_counts.values())
+    trans_entropy = -sum((c / tt) * math.log(c / tt) for c in trans_counts.values()) if tt else 0.0
+
+    max_consec, cur = 1, 1
+    for i in range(1, n):
+        if roles[i] == roles[i - 1]:
+            cur += 1
+            max_consec = max(max_consec, cur)
+        else:
+            cur = 1
+
+    def c(name: str, value: float) -> NumericObs:
+        return NumericObs(name, RUN_CONTEXT, value, F.COORDINATION)
+
+    return [
+        c("n_agents", float(len(distinct))),
+        c("role_entropy", role_entropy),
+        c("role_imbalance", role_imbalance),
+        c("handoff_count", float(handoff_count)),
+        c("handoff_rate", handoff_rate),
+        c("pingpong_rate", pingpong_rate),
+        c("cross_agent_loop", cross_agent_loop),
+        c("role_transition_entropy", trans_entropy),
+        c("max_consecutive_same_role", float(max_consec)),
+    ]
+
+
 def run_summary_observation(run: AgentRun) -> FeatureObservation:
     """Per-run aggregate features, scored once at run end (context ``"run"``)."""
     steps = _ordered_steps(run)
@@ -148,7 +223,7 @@ def run_summary_observation(run: AgentRun) -> FeatureObservation:
     def n(name: str, value: float, fam: FeatureFamily) -> NumericObs:
         return NumericObs(name, RUN_CONTEXT, value, fam)
 
-    numerics = (
+    numerics: tuple[NumericObs, ...] = (
         # structural
         n("step_count", float(len(steps)), F.STRUCTURAL),
         n("max_depth", float(run.max_depth()), F.STRUCTURAL),
@@ -176,6 +251,8 @@ def run_summary_observation(run: AgentRun) -> FeatureObservation:
         n("max_input_tokens", float(max(in_tokens)) if in_tokens else 0.0, F.CONTEXT),
         n("mean_input_tokens", _mean(in_tokens), F.CONTEXT),
     )
+    # Append coordination features for multi-agent runs (empty otherwise).
+    numerics = (*numerics, *coordination_features(run))
     return FeatureObservation("run_summary", None, numerics, ())
 
 

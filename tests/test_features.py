@@ -74,7 +74,10 @@ def test_misselection_fault_introduces_novel_tool_category() -> None:
 def test_run_summary_families_covered() -> None:
     run = FixtureAgent().clean_run(seed=4)
     fams = {n.family for n in run_summary_observation(run).numerics}
-    assert fams == set(FeatureFamily)  # every family represented at run level
+    # Every per-agent family is represented; COORDINATION is multi-agent only.
+    base = set(FeatureFamily) - {FeatureFamily.COORDINATION}
+    assert base <= fams
+    assert FeatureFamily.COORDINATION not in fams  # single-agent run has no coordination features
 
 
 def test_latency_fault_raises_total_duration() -> None:

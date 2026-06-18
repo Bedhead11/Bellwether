@@ -12,7 +12,11 @@ Extractors are pure, deterministic functions (TDD floor, brief §11): same run i
 observations out, no statistics and no randomness.
 """
 
-from bellwether.features.extract import extract_observations, run_summary_observation
+from bellwether.features.extract import (
+    coordination_features,
+    extract_observations,
+    run_summary_observation,
+)
 from bellwether.features.types import (
     CategoricalObs,
     FeatureFamily,
@@ -27,4 +31,5 @@ __all__ = [
     "FeatureObservation",
     "extract_observations",
     "run_summary_observation",
+    "coordination_features",
 ]
