@@ -5,6 +5,14 @@ All notable changes to BELLWETHER are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+### Distribution: CLI, Docker, CI eval gate
+
+- `bellwether` console entrypoint (`cli.py`): `benchmark`, `demo`, `dashboard`, `eval-gate`,
+  `version` — `pip install` to value in one command.
+- `eval-gate` runs the benchmark and fails if precision/detection-rate/FP-rate cross thresholds;
+  wired into CI as a regression gate (brief §6).
+- `Dockerfile` for the self-hostable service exposing the CLI.
+
 ### Drift vs. intended-change runtime (design decision #3)
 
 - `change/page_hinkley.py`: an online Page-Hinkley change-point detector to separate a persistent

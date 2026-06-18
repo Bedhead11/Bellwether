@@ -42,3 +42,20 @@ jobs:
 
       - name: Test (pytest)
         run: pytest --cov=bellwether --cov-report=term-missing
+
+  eval-gate:
+    name: eval regression gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install 3.12
+      - name: Install project
+        run: uv pip install --system -e .
+      - name: Eval regression gate
+        # Fails the build if detection quality regresses below thresholds (brief §6 CI gate).
+        run: bellwether eval-gate --min-precision 0.88 --min-detection 0.80 --max-fp 0.04

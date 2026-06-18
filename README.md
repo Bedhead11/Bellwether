@@ -52,11 +52,22 @@ The four hardest design questions were worked out before implementation. Each do
 uv venv --python 3.11
 uv pip install -e ".[dev]"
 uv run pytest                                # run the test suite
-uv run python examples/detect_demo.py        # learn -> inject faults -> watch it alert + triage
-uv run python examples/benchmark.py          # the benchmark with confidence intervals
+
+# Or use the CLI (installed as `bellwether`):
+uv run bellwether demo                       # learn -> inject faults -> alerts + triage
+uv run bellwether benchmark --quick          # the benchmark with confidence intervals
+uv run bellwether dashboard -o dash.html     # self-contained HTML dashboard
+uv run bellwether eval-gate                  # CI regression gate (fails if quality drops)
+
+# Worked examples (the headline demos):
 uv run python examples/self_improve_demo.py  # the skill tier self-improving (held-out curve)
 uv run python examples/topology_demo.py      # MAP-Elites search over ensemble configs
-uv run python examples/dashboard_demo.py     # writes a self-contained HTML dashboard
+```
+
+Or run the self-hosted image:
+
+```bash
+docker build -t bellwether . && docker run --rm bellwether benchmark --quick
 ```
 
 ### Instrument an agent with the SDK

@@ -37,6 +37,9 @@ mcp = [
     "fastmcp>=2.0",
 ]
 
+[project.scripts]
+bellwether = "bellwether.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/bedhead11/bellwether"
 Repository = "https://github.com/bedhead11/bellwether"
