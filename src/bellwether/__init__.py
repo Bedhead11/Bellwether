@@ -18,6 +18,7 @@ from bellwether.schema import (
     SpanStatus,
 )
 from bellwether.sdk import Bellwether
+from bellwether.triage import TriageExplainer
 
 __all__ = [
     "SCHEMA_VERSION",
@@ -35,6 +36,7 @@ __all__ = [
     "ScoringConfig",
     "Thresholds",
     "DriftReport",
+    "TriageExplainer",
 ]
 
 __version__ = "0.0.1"

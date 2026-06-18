@@ -5,6 +5,24 @@ All notable changes to BELLWETHER are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+### Phase 2 — Governance + self-improvement (skill tier)
+
+- `governance/`: append-only, hash-chained, tamper-evident audit log; `verify()` detects any
+  edit/removal/reorder. Optional JSONL persistence.
+- `improve/skills.py`: drift signatures — focused, direction-filtered detectors. `SubScore`
+  gains a `magnitude` field so signatures separate overwhelming anomalies from rare benign tails
+  where the conformal p-value floors.
+- `improve/generator.py`, `gate.py`, `loop.py`: the self-improvement loop — mine a signature
+  from labeled incidents → evaluate on a held-out benchmark → multi-objective governance gate
+  (promote only on a genuine recall gain with no FP/precision regression) → archive lineage,
+  with QD diversity, plateau detection, and full audit logging.
+- `triage/`: deterministic, knowledge-base explainer mapping an alert to a cause + suggested
+  action, with a pluggable LLM-narrator hook.
+- Demo: a mined `cost_blowup` signature lifts held-out timely recall 0.70 → 0.83 (+0.13) within
+  the 2% FP budget; an `output_degradation` candidate is correctly rejected (FP regression).
+- Broke the detect↔improve import cycle via a `SignatureProvider` Protocol in `detect`.
+- All quality gates green (pytest, mypy --strict, ruff); `examples/self_improve_demo.py` added.
+
 ### Phase 1 — Shippable v1 (detection engine + SDK + benchmark)
 
 - `features/`: pure, deterministic extractors turning a run into an ordered

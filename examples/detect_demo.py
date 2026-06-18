@@ -12,6 +12,7 @@ from bellwether.baseline import BaselineManager
 from bellwether.detect import DriftScorer, ScoringConfig
 from bellwether.detect.engine import calibrate_threshold
 from bellwether.fixtures import FaultSpec, FixtureAgent, faulted_run
+from bellwether.triage import TriageExplainer
 
 
 def main() -> None:
@@ -48,16 +49,15 @@ def main() -> None:
         ("retry_storm", 0.8),
         ("output_degradation", 0.9),
     ]
+    explainer = TriageExplainer()
     for fault_type, severity in faults:
         run = faulted_run(agent, seed=4242, spec=FaultSpec(fault_type, severity, onset_step=1))
         report = scorer.evaluate(run, baseline, thresholds)
         print(report.summary())
-        if report.alert.triggered:
-            top = ", ".join(
-                f"{fam.value}={score:.2f}"
-                for fam, score in list(report.family_contributions.items())[:3]
-            )
-            print(f"          contributing families: {top}")
+        explanation = explainer.explain(report)
+        if explanation is not None:
+            print(f"          cause:  {explanation.suspected_cause}")
+            print(f"          action: {explanation.suggested_action}")
 
 
 if __name__ == "__main__":
